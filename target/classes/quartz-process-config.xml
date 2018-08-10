@@ -1,0 +1,223 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:vm="http://www.mulesoft.org/schema/mule/vm" xmlns:json="http://www.mulesoft.org/schema/mule/json"
+	xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting"
+	xmlns:quartz="http://www.mulesoft.org/schema/mule/quartz" xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" version="CE-3.8.1"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd 
+http://www.mulesoft.org/schema/mule/scripting http://www.mulesoft.org/schema/mule/scripting/current/mule-scripting.xsd 
+http://www.mulesoft.org/schema/mule/quartz http://www.mulesoft.org/schema/mule/quartz/current/mule-quartz.xsd 
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd 
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+
+	<flow name="quartzProcessFlow" processingStrategy="synchronous"
+		initialState="stopped">
+		<quartz:inbound-endpoint jobName="DLQ"
+			cronExpression="${cron.time}" responseTimeout="10000" connector-ref="quartzConnector"
+			doc:name="Quartz">
+			<quartz:event-generator-job>
+				<quartz:payload>HOLD</quartz:payload>
+			</quartz:event-generator-job>
+		</quartz:inbound-endpoint>
+		<logger level="INFO" message="HOLD NEXT TRANSACTION = #[payload]" />
+
+		<scripting:component doc:name="Groovy">
+			<scripting:script engine="Groovy">
+				<![CDATA[if(flowVars.stat == "start" && muleContext.getRegistry().lookupConnector('quartzConnector').isStopped()){
+							muleContext.getRegistry().lookupConnector('quartzConnector').start();
+							flowVars.statusVar = "started";
+						}else if(flowVars.stat == "stop" && muleContext.getRegistry().lookupConnector('quartzConnector').isStarted()){
+							muleContext.getRegistry().lookupConnector('quartzConnector').stop();
+							flowVars.statusVar = "stopped";
+						}else if(flowVars.stat == "start" && muleContext.getRegistry().lookupConnector('quartzConnector').isStarted()){
+							flowVars.statusVar = "started";
+						}else if(flowVars.stat == "stop" && muleContext.getRegistry().lookupConnector('quartzConnector').isStopped()){
+							flowVars.statusVar = "stopped";
+						}else{
+							flowVars.statusVar = "started";
+						}]]>
+			</scripting:script>
+		</scripting:component>
+		<response>
+			<set-payload value="#[flowVars.statusVar]" doc:name="Set statusVar as Response" />
+			<expression-component doc:name="Expression"> 
+				<![CDATA[responseMap = new java.util.HashMap(); 
+					responseMap['status'] = payload;
+				payload = responseMap;]]>
+			</expression-component>
+			<json:object-to-json-transformer />
+		</response>
+		<logger level="INFO" message="SCRIPTING = #[payload]" />
+		<choice>
+			<when expression="#[payload == 'started']">
+				<processor-chain>
+					<db:select config-ref="MySQL_Configuration" doc:name="Database">
+						<db:parameterized-query>
+			            	<![CDATA[SELECT *, (SELECT GROUP_CONCAT(id SEPARATOR ',')
+											FROM bellatrix.schedule_transfer
+										    WHERE status='REQUESTED' AND HOUR(schedule_time)=HOUR(CURRENT_TIMESTAMP())) as listID 
+    							FROM bellatrix.schedule_transfer 
+								WHERE status='REQUESTED' AND HOUR(schedule_time)=HOUR(CURRENT_TIMESTAMP())]]>
+						</db:parameterized-query>
+					</db:select>
+					<set-variable value="#[payload]" variableName="originalPayload"
+						doc:name="Variable" />
+					<logger level="INFO" message="#[payload]" />
+					<choice>
+						<when expression="#[payload == []]">
+							<processor-chain>
+								<expression-component doc:name="Expression">
+									<![CDATA[responseMap = new java.util.HashMap();
+										responseMap['status'] = 'NOT_FOUND';
+									payload = responseMap;]]>
+								</expression-component>
+							</processor-chain>
+						</when>
+						<otherwise>
+							<processor-chain>
+								<set-variable variableName="listID"
+									value="#[payload.get(0)['listID']]" doc:name="Variable" />
+								<set-payload
+									value="#[&quot;UPDATE bellatrix.schedule_transfer SET status='PENDING' WHERE id IN (&quot; + flowVars.listID + &quot;)&quot;]" />
+								<db:update config-ref="MySQL_Configuration" doc:name="Database">
+									<db:dynamic-query><![CDATA[#[payload]]]></db:dynamic-query>
+								</db:update>
+								<logger level="INFO" message="UPDATE IN = #[payload]" />
+								<set-variable variableName="trxMaps"
+									value="#[new java.util.ArrayList()]" doc:name="Variable" />
+								<set-payload value="#[flowVars['originalPayload']]" />
+								<foreach collection="#[payload]">
+									<set-variable variableName="trxPayload"
+										value="#[new java.util.HashMap()]" doc:name="Variable" />
+									<set-variable variableName="id" value="#[payload.'id']"
+										doc:name="Variable" />
+									<logger level="INFO" message="ID = #[payload.'id']" />
+									<set-variable variableName="fromMemberID"
+										value="#[payload.'from_member_id']" doc:name="Variable" />
+									<set-variable variableName="toMemberID"
+										value="#[payload.'to_member_id']" doc:name="Variable" />
+									<set-variable variableName="trfTypeID"
+										value="#[payload.'transfer_type_id']" doc:name="Variable" />
+									<set-variable variableName="amount" value="#[payload.'amount']"
+										doc:name="Variable" />
+									<set-variable variableName="status" value="#[payload.'status']"
+										doc:name="Variable" />
+									<set-variable variableName="desc"
+										value="#[payload.'description']" doc:name="Variable" />
+
+									<db:select config-ref="MySQL_Configuration" doc:name="Database">
+										<db:parameterized-query> 
+											<![CDATA[SELECT username FROM bellatrix.members 
+												WHERE id=#[flowVars['fromMemberID']]]]>
+										</db:parameterized-query>
+									</db:select>
+									<set-variable value="#[payload.get(0)['username']]"
+										variableName="fromMember" doc:name="Variable" />
+									<db:select config-ref="MySQL_Configuration" doc:name="Database">
+										<db:parameterized-query> 
+											<![CDATA[SELECT username FROM bellatrix.members 
+												WHERE id=#[flowVars['toMemberID']]]]> 
+										</db:parameterized-query>
+									</db:select>
+									<set-variable value="#[payload.get(0)['username']]"
+										variableName="toMember" doc:name="Variable" />
+									<set-variable
+										value="#[function:datestamp:yyyyMMddhhmmsSSS]#[flowVars['id']]"
+										variableName="traceNumber" doc:name="Variable" />
+									<choice>
+										<when expression="#[flowVars['desc'] == null]">
+											<set-variable value="AUTO TRANSFER"
+												variableName="desc" />
+										</when>
+										<otherwise>
+											<logger level="INFO" message="DESC #[flowVars['desc']]" />
+										</otherwise>
+									</choice>
+									<expression-component doc:name="Expression"> 
+										<![CDATA[msg='<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ser="http://services.bellatrix.org/"> 
+														<soapenv:Header> 
+															<ser:headerAuth> 
+																<token>${ws.token}</token> 
+															</ser:headerAuth> 
+														</soapenv:Header> 
+														<soapenv:Body> 
+															<ser:doPayment> 
+																<amount>' + flowVars['amount'] + '</amount> 
+																<description>' + flowVars['desc'] + '</description> 
+																<fromMember>' + flowVars['fromMember'] + '</fromMember> 
+																<toMember>' + flowVars['toMember'] + '</toMember> 
+																<traceNumber>' + flowVars['traceNumber'] + '</traceNumber> 
+																<transferTypeID>' + flowVars['trfTypeID'] + '</transferTypeID> 
+															</ser:doPayment> 
+														</soapenv:Body> </soapenv:Envelope>'; 
+													payload = msg;]]>
+									</expression-component>
+									<set-payload
+										value="#[org.apache.commons.codec.binary.StringUtils.newStringUtf8(payload.getBytes())]" />
+									<!-- <logger level="INFO" message="REQUEST DO PAYMENT = #[payload]" 
+										/> -->
+									<http:request config-ref="HTTP_Request_Configuration"
+										path="payments" method="POST" doc:name="HTTP">
+										<http:request-builder>
+											<http:header headerName="soapaction" value="&quot;doPayment&quot;" />
+										</http:request-builder>
+									</http:request>
+									<byte-array-to-string-transformer
+										doc:name="Byte Array to String" />
+									<logger level="INFO" message="RESPONSE DO PAYMENT = #[payload]" />
+									<set-variable value="#[xpath3('//status/message')]"
+										variableName="status" doc:name="Variable" />
+								</foreach>
+								<choice>
+									<when expression="#[flowVars['status'] == 'PROCESSED']">
+										<set-payload value="#[&quot;DELETE FROM bellatrix.schedule_transfer 
+											WHERE id IN (&quot; + flowVars.listID + &quot;)&quot;]" /> 
+										<!--<set-payload
+											value="#[&quot;UPDATE bellatrix.schedule_transfer 
+												SET status='PROCESSED' 
+												WHERE id IN (&quot; + flowVars.listID + &quot;)&quot;]" />
+										<db:update config-ref="MySQL_Configuration"
+											doc:name="Database">
+											<db:dynamic-query><![CDATA[#[payload]]]></db:dynamic-query>
+										</db:update>-->
+										<db:delete config-ref="MySQL_Configuration"
+											doc:name="Database">
+											<db:dynamic-query><![CDATA[#[payload]]]></db:dynamic-query>
+										</db:delete>
+										<expression-component doc:name="Expression"> 
+											<![CDATA[responseMap = new java.util.HashMap(); 
+												responseMap['status'] = 'PROCESSED'; 
+											payload = responseMap;]]>
+										</expression-component>
+									</when>
+									<otherwise>
+										<expression-component doc:name="Expression"> 
+											<![CDATA[responseMap = new java.util.HashMap(); 
+												responseMap['status'] = 'FAILED'; 
+											payload = responseMap;]]>
+										</expression-component>
+									</otherwise>
+								</choice>
+							</processor-chain>
+						</otherwise>
+					</choice>
+				</processor-chain>
+			</when>
+			<otherwise>
+				<processor-chain>
+					<expression-component doc:name="Expression"> 
+						<![CDATA[responseMap = new java.util.HashMap(); 
+							responseMap['status'] = payload; 
+						payload = responseMap;]]>
+					</expression-component>
+				</processor-chain>
+			</otherwise>
+		</choice>
+		<json:object-to-json-transformer />
+	</flow>
+</mule>

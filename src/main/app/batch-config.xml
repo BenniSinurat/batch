@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting"
+	xmlns:json="http://www.mulesoft.org/schema/mule/json" xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+	xmlns:quartz="http://www.mulesoft.org/schema/mule/quartz" xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/scripting http://www.mulesoft.org/schema/mule/scripting/current/mule-scripting.xsd 
+http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd 
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd 
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd http://www.mulesoft.org/schema/mule/quartz http://www.mulesoft.org/schema/mule/quartz/current/mule-quartz.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd">
+
+	<flow name="trigger-bacth-001">
+		<http:listener config-ref="HTTP_Listener_Configuration"
+			path="Trigger" allowedMethods="GET" doc:name="HTTP">
+		</http:listener>
+		<message-filter doc:name="Filter favicon">
+			<not-filter>
+				<wildcard-filter pattern="/favicon.ico"
+					caseSensitive="true" />
+			</not-filter>
+		</message-filter>
+
+		<set-variable variableName="stat"
+			value="#[message.inboundProperties.'http.query.params'.get('status')]"
+			doc:name="Variable" />
+		<expression-component doc:name="Expression"> 
+			<![CDATA[responseMap = new java.util.HashMap(); 
+				responseMap['stat'] = flowVars['stat'];
+			payload = responseMap;]]>
+		</expression-component>
+		<set-variable variableName="checkFlow"
+			value="#[groovy:muleContext.registry.lookupFlowConstruct('quartzProcessFlow').isStarted() ? 'started' : 'stopped']"
+			doc:name="Set Payload" />
+		<choice>
+			<when expression="#[flowVars['checkFlow'] == 'started']">
+				<flow-ref name="quartzProcessFlow" />
+			</when>
+			<otherwise>
+				<expression-component>
+					app.registry.quartzProcessFlow.start();
+				</expression-component>
+				<flow-ref name="quartzProcessFlow" />
+			</otherwise>
+		</choice>
+	</flow>
+
+	<flow name="status-bacth-001">
+		<http:listener config-ref="HTTP_Listener_Configuration"
+			path="Status" allowedMethods="GET" doc:name="HTTP">
+		</http:listener>
+		<message-filter doc:name="Filter favicon">
+			<not-filter>
+				<wildcard-filter pattern="/favicon.ico"
+					caseSensitive="true" />
+			</not-filter>
+		</message-filter>
+
+		<set-payload
+			value="#[groovy:muleContext.registry.lookupConnector('quartzConnector').isStarted() ? 'started' : 'stopped']"
+			doc:name="Set Payload" />
+		<expression-component doc:name="Expression"> 
+			<![CDATA[responseMap = new java.util.HashMap(); 
+				responseMap['status'] = payload;
+			payload = responseMap;]]>
+		</expression-component>
+		<json:object-to-json-transformer />
+		<logger level="INFO" message="Status = #[payload]" />
+	</flow>
+</mule>

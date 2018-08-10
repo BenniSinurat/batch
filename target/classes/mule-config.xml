@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:vm="http://www.mulesoft.org/schema/mule/vm" xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:quartz="http://www.mulesoft.org/schema/mule/quartz" xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" version="CE-3.8.1"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd 
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd 
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd 
+http://www.mulesoft.org/schema/mule/quartz http://www.mulesoft.org/schema/mule/quartz/current/mule-quartz.xsd http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+	
+	<vm:connector name="VM_QUARTZ" validateConnections="true"
+		doc:name="VM" />
+
+	<vm:endpoint exchange-pattern="one-way" path="test"
+		connector-ref="VM_QUARTZ" name="VM" doc:name="VM" />
+	
+	<http:listener-config name="HTTP_Listener_Configuration"
+		host="0.0.0.0" port="${global.port}" basePath="Batch"
+		doc:name="HTTP Listener Configuration" />
+
+	<db:mysql-config name="MySQL_Configuration"
+		url="jdbc:mysql://${batch.db.host}:${batch.db.port}/${batch.db.name}?useSSL=false&amp;useServerPrepStmts=false&amp;rewriteBatchedStatements=true"
+		user="${batch.db.user}" password="${batch.db.password}" doc:name="MySQL Configuration" />
+
+	<http:request-config name="HTTP_Request_Configuration"
+		host="192.168.77.127" port="8081" basePath="bellatrix/host/services/ws"
+		doc:name="HTTP Request Configuration" />
+
+	<quartz:connector name="quartzConnector"
+		validateConnections="true" doc:name="Quartz">
+		<receiver-threading-profile maxThreadsActive="1"/>
+		<quartz:factory-property key="org.quartz.scheduler.instanceName"
+			value="MuleScheduler" />
+		<quartz:factory-property key="org.quartz.threadPool.class"
+			value="org.quartz.simpl.SimpleThreadPool" />
+		<quartz:factory-property key="org.quartz.threadPool.threadCount"
+			value="1" />
+		<quartz:factory-property key="org.quartz.scheduler.rmi.proxy"
+			value="false" />
+		<quartz:factory-property key="org.quartz.scheduler.rmi.export"
+			value="false" />
+		<quartz:factory-property key="org.quartz.jobStore.class"
+			value="org.quartz.simpl.RAMJobStore" />
+	</quartz:connector>
+</mule>

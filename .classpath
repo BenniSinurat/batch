@@ -1,0 +1,22 @@
+<classpath>
+  <classpathentry kind="src" path="src/main/api" excluding="**/*.java"/>
+  <classpathentry kind="src" path="src/main/app" excluding="**/*.java"/>
+  <classpathentry kind="src" path="src/main/java"/>
+  <classpathentry kind="src" path="src/main/resources" excluding="**/*.java"/>
+  <classpathentry kind="src" path="src/test/java" output="target/test-classes"/>
+  <classpathentry kind="src" path="src/test/resources" output="target/test-classes" excluding="**/*.java"/>
+  <classpathentry kind="output" path="target/classes"/>
+  <classpathentry kind="con" path="MULE_RUNTIME"/>
+  <classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
+  <classpathentry kind="var" path="M2_REPO/c3p0/c3p0/0.9.1.1/c3p0-0.9.1.1.jar"/>
+  <classpathentry kind="var" path="M2_REPO/commons-dbcp/commons-dbcp/1.4/commons-dbcp-1.4.jar"/>
+  <classpathentry kind="var" path="M2_REPO/commons-pool/commons-pool/1.5.4/commons-pool-1.5.4.jar"/>
+  <classpathentry kind="var" path="M2_REPO/mysql/mysql-connector-java/5.1.39/mysql-connector-java-5.1.39.jar"/>
+  <classpathentry kind="var" path="M2_REPO/org/quartz-scheduler/internal/quartz-commonj/2.2.1/quartz-commonj-2.2.1.jar"/>
+  <classpathentry kind="var" path="M2_REPO/org/quartz-scheduler/internal/quartz-core/2.2.1/quartz-core-2.2.1.jar"/>
+  <classpathentry kind="var" path="M2_REPO/org/quartz-scheduler/internal/quartz-jboss/2.2.1/quartz-jboss-2.2.1.jar"/>
+  <classpathentry kind="var" path="M2_REPO/org/quartz-scheduler/internal/quartz-oracle/2.2.1/quartz-oracle-2.2.1.jar"/>
+  <classpathentry kind="var" path="M2_REPO/org/quartz-scheduler/internal/quartz-plugins/2.2.1/quartz-plugins-2.2.1.jar"/>
+  <classpathentry kind="var" path="M2_REPO/org/quartz-scheduler/internal/quartz-terracotta-bootstrap/2.2.1/quartz-terracotta-bootstrap-2.2.1.jar"/>
+  <classpathentry kind="var" path="M2_REPO/org/quartz-scheduler/internal/quartz-weblogic/2.2.1/quartz-weblogic-2.2.1.jar"/>
+</classpath>
